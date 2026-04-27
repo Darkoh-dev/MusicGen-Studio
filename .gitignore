@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project outputs
+outputs/wav/*
+outputs/mp3/*
+
+# Keep output folders tracked
+!outputs/wav/.gitkeep
+!outputs/mp3/.gitkeep
+
+# Local audio inputs
+input_audio/*
+
+# Keep input folder tracked
+!input_audio/.gitkeep
+
+# Hugging Face / model caches
+.cache/
+hf_cache/
+
+# Logs
+*.log
