@@ -3,6 +3,7 @@ import argparse
 from datetime import datetime
 from typing import Dict, Tuple
 
+from scipy.io.wavfile import write as write_wav_file
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
 from app.config import (
@@ -101,11 +102,24 @@ def print_generation_summary(prompt: str, duration_seconds: int, output_path: st
     print(f"Generated tensor shape: {tuple(audio_values.shape)}")
 
 
+def extract_audio_array(audio_values):
+    audio_tensor = audio_values[0, 0].detach().cpu()
+    audio_array = audio_tensor.numpy().astype("float32")
+    return audio_array
+
+
+def save_audio_to_wav(audio_values, output_path: str) -> None:
+    audio_array = extract_audio_array(audio_values)
+    write_wav_file(output_path, rate=DEFAULT_SAMPLE_RATE, data=audio_array)
+
+
 def main() -> None:
     ensure_required_directories()
     args = parse_args()
     audio_values, output_path = generate_from_text(args.prompt, args.duration)
     print_generation_summary(args.prompt, args.duration, output_path, audio_values)
+    save_audio_to_wav(audio_values, output_path)
+    print(f"WAV file saved to: {output_path}")
 
 if __name__ == "__main__":
     main()
