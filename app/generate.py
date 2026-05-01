@@ -1,5 +1,4 @@
 import argparse
-
 from datetime import datetime
 from typing import Dict, Tuple
 
@@ -9,16 +8,19 @@ from transformers import AutoProcessor, MusicgenForConditionalGeneration
 from app.config import (
     DEFAULT_DEVICE,
     DEFAULT_DURATION_SECONDS,
-    DEFAULT_MODEL_NAME,
+    DEFAULT_MODEL_KEY,
     DEFAULT_OUTPUT_FILENAME_PREFIX,
-    DEFAULT_SAMPLE_RATE,
     DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_PROMPT,
+    DEFAULT_SAMPLE_RATE,
     HF_CACHE_DIR,
+    MAX_DURATION_SECONDS,
+    MIN_DURATION_SECONDS,
+    MODEL_PRESETS,
     REQUIRED_DIRECTORIES,
+    SUPPORTED_MODEL_KEYS,
     WAV_OUTPUT_DIR,
 )
-
-DEFAULT_PROMPT = "uplifting melodic edm with warm synths and a driving rhythm"
 
 
 def ensure_required_directories() -> None:
@@ -33,9 +35,17 @@ def build_output_path() -> str:
 
 
 def validate_duration(duration_seconds: int) -> int:
-    if duration_seconds <= 0:
-        raise ValueError("Duration must be greater than 0 seconds.")
+    if duration_seconds < MIN_DURATION_SECONDS or duration_seconds > MAX_DURATION_SECONDS:
+        raise ValueError(
+            f"Duration must be between {MIN_DURATION_SECONDS} and {MAX_DURATION_SECONDS} seconds."
+        )
     return duration_seconds
+
+
+def validate_model_key(model_key: str) -> str:
+    if model_key not in MODEL_PRESETS:
+        raise ValueError(f"Model key must be one of: {', '.join(SUPPORTED_MODEL_KEYS)}")
+    return model_key
 
 
 def build_generation_kwargs(duration_seconds: int) -> Dict[str, int]:
@@ -44,22 +54,25 @@ def build_generation_kwargs(duration_seconds: int) -> Dict[str, int]:
     }
 
 
-def load_model_and_processor():
+def load_model_and_processor(model_name: str):
     processor = AutoProcessor.from_pretrained(
-        DEFAULT_MODEL_NAME,
+        model_name,
         cache_dir=HF_CACHE_DIR,
     )
     model = MusicgenForConditionalGeneration.from_pretrained(
-        DEFAULT_MODEL_NAME,
+        model_name,
         cache_dir=HF_CACHE_DIR,
     )
     model = model.to(DEFAULT_DEVICE)
     return processor, model
 
 
-def generate_from_text(prompt: str, duration_seconds: int) -> Tuple[object, str]:
+def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tuple[object, str, str]:
     validated_duration = validate_duration(duration_seconds)
-    processor, model = load_model_and_processor()
+    validated_model_key = validate_model_key(model_key)
+    model_name = MODEL_PRESETS[validated_model_key]
+
+    processor, model = load_model_and_processor(model_name)
     inputs = processor(
         text=[prompt],
         padding=True,
@@ -72,7 +85,7 @@ def generate_from_text(prompt: str, duration_seconds: int) -> Tuple[object, str]
         **generation_kwargs,
     )
     output_path = build_output_path()
-    return audio_values, output_path
+    return audio_values, output_path, model_name
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,13 +100,26 @@ def parse_args() -> argparse.Namespace:
         "--duration",
         type=int,
         default=DEFAULT_DURATION_SECONDS,
-        help="Requested generation duration in seconds.",
+        help=f"Requested generation duration in seconds ({MIN_DURATION_SECONDS}-{MAX_DURATION_SECONDS}).",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=DEFAULT_MODEL_KEY,
+        choices=SUPPORTED_MODEL_KEYS,
+        help="Model preset to use.",
     )
     return parser.parse_args()
 
 
-def print_generation_summary(prompt: str, duration_seconds: int, output_path: str, audio_values) -> None:
-    print(f"Target model: {DEFAULT_MODEL_NAME}")
+def print_generation_summary(
+    model_name: str,
+    prompt: str,
+    duration_seconds: int,
+    output_path: str,
+    audio_values,
+) -> None:
+    print(f"Target model: {model_name}")
     print(f"Target device: {DEFAULT_DEVICE}")
     print(f"Prompt: {prompt}")
     print(f"Duration: {duration_seconds} seconds")
@@ -116,10 +142,11 @@ def save_audio_to_wav(audio_values, output_path: str) -> None:
 def main() -> None:
     ensure_required_directories()
     args = parse_args()
-    audio_values, output_path = generate_from_text(args.prompt, args.duration)
-    print_generation_summary(args.prompt, args.duration, output_path, audio_values)
+    audio_values, output_path, model_name = generate_from_text(args.prompt, args.duration, args.model)
+    print_generation_summary(model_name, args.prompt, args.duration, output_path, audio_values)
     save_audio_to_wav(audio_values, output_path)
     print(f"WAV file saved to: {output_path}")
+
 
 if __name__ == "__main__":
     main()
