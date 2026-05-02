@@ -12,7 +12,11 @@ from app.config import (
     MODEL_PRESETS,
     SUPPORTED_MODEL_KEYS,
 )
-from app.ec2_backend_runner import download_generated_file, run_remote_generation
+from app.ec2_backend_runner import (
+    EC2GenerationError,
+    download_generated_file,
+    run_remote_generation,
+)
 from app.prompt_logger import log_generation
 
 
@@ -162,6 +166,19 @@ class MusicGenStudioUI:
         self.history_details.insert("1.0", selected_entry["details"])
         self.history_details.configure(state="disabled")
 
+    def format_backend_error(self, exc: EC2GenerationError) -> str:
+        parts = [str(exc)]
+
+        if exc.stderr.strip():
+            parts.append("STDERR:")
+            parts.append(exc.stderr.strip())
+
+        if exc.stdout.strip():
+            parts.append("STDOUT:")
+            parts.append(exc.stdout.strip())
+
+        return "\n\n".join(parts)
+
     def handle_generate(self) -> None:
         prompt = self.prompt_text.get("1.0", "end").strip()
         duration_text = self.duration_var.get().strip()
@@ -211,6 +228,9 @@ class MusicGenStudioUI:
 
             self.result_var.set("Generation completed successfully.")
             self.output_path_var.set(str(local_file_path))
+        except EC2GenerationError as exc:
+            self.result_var.set("Generation failed.")
+            messagebox.showerror("EC2 backend error", self.format_backend_error(exc))
         except Exception as exc:
             self.result_var.set("Generation failed.")
             messagebox.showerror("Generation failed", str(exc))

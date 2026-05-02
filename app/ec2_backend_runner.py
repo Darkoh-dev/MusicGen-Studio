@@ -13,6 +13,13 @@ from app.ec2_backend_config import (
 )
 
 
+class EC2GenerationError(Exception):
+    def __init__(self, message: str, stdout: str = "", stderr: str = "") -> None:
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 def build_ssh_command(remote_command: str) -> list[str]:
     return [
         "ssh",
@@ -45,7 +52,11 @@ def build_remote_generate_command(prompt: str, duration: int, model: str) -> str
 def extract_saved_wav_path(command_output: str) -> str:
     match = re.search(r"WAV file saved to: (.+\\.wav)", command_output)
     if not match:
-        raise ValueError("Could not find generated WAV path in EC2 output.")
+        raise EC2GenerationError(
+            "Could not find generated WAV path in EC2 output.",
+            stdout=command_output,
+            stderr="",
+        )
     return match.group(1).strip()
 
 
@@ -53,12 +64,19 @@ def run_remote_generation(prompt: str, duration: int, model: str) -> tuple[str, 
     remote_command = build_remote_generate_command(prompt, duration, model)
     ssh_command = build_ssh_command(remote_command)
 
-    result = subprocess.run(
-        ssh_command,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            ssh_command,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise EC2GenerationError(
+            "Remote generation command failed.",
+            stdout=exc.stdout or "",
+            stderr=exc.stderr or "",
+        ) from exc
 
     saved_wav_path = extract_saved_wav_path(result.stdout)
     return result.stdout, saved_wav_path
@@ -68,11 +86,18 @@ def download_generated_file(remote_file_path: str) -> Path:
     LOCAL_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     scp_command = build_scp_command(remote_file_path, LOCAL_OUTPUTS_DIR)
 
-    subprocess.run(
-        scp_command,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        subprocess.run(
+            scp_command,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise EC2GenerationError(
+            "Failed to download generated WAV file from EC2.",
+            stdout=exc.stdout or "",
+            stderr=exc.stderr or "",
+        ) from exc
 
     return LOCAL_OUTPUTS_DIR / Path(remote_file_path).name
