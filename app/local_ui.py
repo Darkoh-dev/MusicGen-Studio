@@ -8,9 +8,11 @@ from app.config import (
     DEFAULT_PROMPT,
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
+    MODEL_PRESETS,
     SUPPORTED_MODEL_KEYS,
 )
 from app.ec2_backend_runner import download_generated_file, run_remote_generation
+from app.prompt_logger import log_generation
 
 
 class MusicGenStudioUI:
@@ -19,7 +21,6 @@ class MusicGenStudioUI:
         self.root.title("MusicGen Studio")
         self.root.geometry("720x520")
 
-        self.prompt_var = tk.StringVar(value=DEFAULT_PROMPT)
         self.model_var = tk.StringVar(value=DEFAULT_MODEL_KEY)
         self.duration_var = tk.StringVar(value=str(DEFAULT_DURATION_SECONDS))
         self.result_var = tk.StringVar(value="Ready.")
@@ -86,37 +87,47 @@ class MusicGenStudioUI:
         output_label = ttk.Label(main_frame, text="Downloaded File")
         output_label.pack(anchor="w")
 
-        output_value  = ttk.Label(main_frame, textvariable=self.output_path_var, wraplength=660)
+        output_value = ttk.Label(main_frame, textvariable=self.output_path_var, wraplength=660)
         output_value.pack(anchor="w", pady=(4, 0))
 
     def handle_generate(self) -> None:
         prompt = self.prompt_text.get("1.0", "end").strip()
         duration_text = self.duration_var.get().strip()
-        model = self.model_var.get().strip()
+        model_preset = self.model_var.get().strip()
 
         if not prompt:
             messagebox.showerror("Missing prompt", "Please enter a prompt.")
             return
-        
+
         if not duration_text.isdigit():
             messagebox.showerror("Invalid duration", "Duration must be a whole number.")
             return
-        
+
         duration = int(duration_text)
         if duration < MIN_DURATION_SECONDS or duration > MAX_DURATION_SECONDS:
             messagebox.showerror(
                 "Invalid duration",
-                f"Duration must be between {MIN_DURATION_SECONDS} and {MAX_DURATION_SECONDS} seconds."
+                f"Duration must be between {MIN_DURATION_SECONDS} and {MAX_DURATION_SECONDS} seconds.",
             )
             return
-        
+
         self.result_var.set("Submitting generation job to EC2...")
         self.output_path_var.set("")
         self.root.update_idletasks()
 
         try:
-            _, remote_file_path = run_remote_generation(prompt, duration, model)
+            _, remote_file_path = run_remote_generation(prompt, duration, model_preset)
             local_file_path = download_generated_file(remote_file_path)
+            model_name = MODEL_PRESETS[model_preset]
+
+            log_generation(
+                model_preset=model_preset,
+                model_name=model_name,
+                prompt=prompt,
+                duration_seconds=duration,
+                output_file=str(Path(local_file_path).resolve()),
+                notes="Generated from local Windows UI.",
+            )
 
             self.result_var.set("Generation completed successfully.")
             self.output_path_var.set(str(Path(local_file_path).resolve()))
@@ -129,7 +140,6 @@ def main() -> None:
     root = tk.Tk()
     app = MusicGenStudioUI(root)
     root.mainloop()
-
 
 
 if __name__ == "__main__":

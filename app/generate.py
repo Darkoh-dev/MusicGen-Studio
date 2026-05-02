@@ -21,6 +21,7 @@ from app.config import (
     SUPPORTED_MODEL_KEYS,
     WAV_OUTPUT_DIR,
 )
+from app.prompt_logger import log_generation
 
 
 def ensure_required_directories() -> None:
@@ -67,7 +68,7 @@ def load_model_and_processor(model_name: str):
     return processor, model
 
 
-def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tuple[object, str, str]:
+def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tuple[object, str, str, str]:
     validated_duration = validate_duration(duration_seconds)
     validated_model_key = validate_model_key(model_key)
     model_name = MODEL_PRESETS[validated_model_key]
@@ -85,7 +86,7 @@ def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tu
         **generation_kwargs,
     )
     output_path = build_output_path()
-    return audio_values, output_path, model_name
+    return audio_values, output_path, model_name, validated_model_key
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,9 +143,23 @@ def save_audio_to_wav(audio_values, output_path: str) -> None:
 def main() -> None:
     ensure_required_directories()
     args = parse_args()
-    audio_values, output_path, model_name = generate_from_text(args.prompt, args.duration, args.model)
+    audio_values, output_path, model_name, model_preset = generate_from_text(
+        args.prompt,
+        args.duration,
+        args.model,
+    )
     print_generation_summary(model_name, args.prompt, args.duration, output_path, audio_values)
     save_audio_to_wav(audio_values, output_path)
+
+    log_generation(
+        model_preset=model_preset,
+        model_name=model_name,
+        prompt=args.prompt,
+        duration_seconds=args.duration,
+        output_file=output_path,
+        notes="Generated from CLI workflow.",
+    )
+
     print(f"WAV file saved to: {output_path}")
 
 
