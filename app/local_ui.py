@@ -1,4 +1,5 @@
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 
@@ -19,12 +20,13 @@ class MusicGenStudioUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("MusicGen Studio")
-        self.root.geometry("720x520")
+        self.root.geometry("820x760")
 
         self.model_var = tk.StringVar(value=DEFAULT_MODEL_KEY)
         self.duration_var = tk.StringVar(value=str(DEFAULT_DURATION_SECONDS))
         self.result_var = tk.StringVar(value="Ready.")
         self.output_path_var = tk.StringVar(value="")
+        self.history_entries: list[dict[str, str]] = []
 
         self._build_layout()
 
@@ -34,6 +36,9 @@ class MusicGenStudioUI:
 
         title_label = ttk.Label(main_frame, text="MusicGen Studio", font=("Segoe UI", 18, "bold"))
         title_label.pack(anchor="w", pady=(0, 12))
+
+        prompt_label = ttk.Label(main_frame, text="Prompt")
+        prompt_label.pack(anchor="w")
 
         self.prompt_text = tk.Text(main_frame, height=8, wrap="word")
         self.prompt_text.pack(fill="x", pady=(4, 12))
@@ -81,14 +86,81 @@ class MusicGenStudioUI:
         status_label = ttk.Label(main_frame, text="Status")
         status_label.pack(anchor="w")
 
-        status_value = ttk.Label(main_frame, textvariable=self.result_var, wraplength=660)
+        status_value = ttk.Label(main_frame, textvariable=self.result_var, wraplength=760)
         status_value.pack(anchor="w", pady=(4, 12))
 
         output_label = ttk.Label(main_frame, text="Downloaded File")
         output_label.pack(anchor="w")
 
-        output_value = ttk.Label(main_frame, textvariable=self.output_path_var, wraplength=660)
-        output_value.pack(anchor="w", pady=(4, 0))
+        output_value = ttk.Label(main_frame, textvariable=self.output_path_var, wraplength=760)
+        output_value.pack(anchor="w", pady=(4, 12))
+
+        history_label = ttk.Label(main_frame, text="Generation History")
+        history_label.pack(anchor="w")
+
+        self.history_list = tk.Listbox(main_frame, height=10)
+        self.history_list.pack(fill="both", expand=True, pady=(4, 8))
+        self.history_list.bind("<<ListboxSelect>>", self.handle_history_select)
+
+        history_details_label = ttk.Label(main_frame, text="Selected History Entry")
+        history_details_label.pack(anchor="w")
+
+        self.history_details = tk.Text(main_frame, height=8, wrap="word")
+        self.history_details.pack(fill="both", expand=True, pady=(4, 0))
+        self.history_details.configure(state="disabled")
+
+    def add_history_entry(
+        self,
+        model_preset: str,
+        duration: int,
+        prompt: str,
+        local_file_path: Path,
+    ) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        prompt_preview = prompt[:60].replace("\n", " ")
+        if len(prompt) > 60:
+            prompt_preview += "..."
+
+        entry_summary = (
+            f"{timestamp} | model={model_preset} | duration={duration}s | "
+            f"file={local_file_path.name} | prompt={prompt_preview}"
+        )
+
+        entry_details = (
+            f"Date: {timestamp}\n"
+            f"Model Preset: {model_preset}\n"
+            f"Duration: {duration} seconds\n"
+            f"Output File: {local_file_path}\n"
+            f"Prompt:\n{prompt}"
+        )
+
+        self.history_entries.insert(
+            0,
+            {
+                "summary": entry_summary,
+                "details": entry_details,
+                "output_path": str(local_file_path),
+            },
+        )
+
+        self.history_list.delete(0, tk.END)
+        for item in self.history_entries:
+            self.history_list.insert(tk.END, item["summary"])
+
+    def handle_history_select(self, event) -> None:
+        selection = self.history_list.curselection()
+        if not selection:
+            return
+
+        selected_index = selection[0]
+        selected_entry = self.history_entries[selected_index]
+
+        self.output_path_var.set(selected_entry["output_path"])
+
+        self.history_details.configure(state="normal")
+        self.history_details.delete("1.0", tk.END)
+        self.history_details.insert("1.0", selected_entry["details"])
+        self.history_details.configure(state="disabled")
 
     def handle_generate(self) -> None:
         prompt = self.prompt_text.get("1.0", "end").strip()
@@ -118,6 +190,7 @@ class MusicGenStudioUI:
         try:
             _, remote_file_path = run_remote_generation(prompt, duration, model_preset)
             local_file_path = download_generated_file(remote_file_path)
+            local_file_path = Path(local_file_path).resolve()
             model_name = MODEL_PRESETS[model_preset]
 
             log_generation(
@@ -125,12 +198,19 @@ class MusicGenStudioUI:
                 model_name=model_name,
                 prompt=prompt,
                 duration_seconds=duration,
-                output_file=str(Path(local_file_path).resolve()),
+                output_file=str(local_file_path),
                 notes="Generated from local Windows UI.",
             )
 
+            self.add_history_entry(
+                model_preset=model_preset,
+                duration=duration,
+                prompt=prompt,
+                local_file_path=local_file_path,
+            )
+
             self.result_var.set("Generation completed successfully.")
-            self.output_path_var.set(str(Path(local_file_path).resolve()))
+            self.output_path_var.set(str(local_file_path))
         except Exception as exc:
             self.result_var.set("Generation failed.")
             messagebox.showerror("Generation failed", str(exc))
