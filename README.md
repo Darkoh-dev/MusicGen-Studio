@@ -138,3 +138,19 @@ Expected result:
 - the script prints the target model and device
 - the script prints the prompt and duration
 - the script saves a WAV file into outputs/wav/
+
+## Local Windows UI
+
+A local Windows UI is available for submitting generation jobs to the EC2 backend.
+
+Run it from the project root with the local virtual environment active:
+
+```powershell
+python -m app.local_ui
+```
+The UI allows you to:
+- enter a text prompt
+- choose a model preset
+- set the generation duration
+- submit the job to EC2
+- download the generated WAV file back to the local machine
