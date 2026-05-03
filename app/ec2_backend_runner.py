@@ -50,7 +50,7 @@ def build_remote_generate_command(prompt: str, duration: int, model: str) -> str
 
 
 def extract_saved_wav_path(command_output: str) -> str:
-    match = re.search(r"WAV file saved to: (.+\\.wav)", command_output)
+    match = re.search(r"WAV file saved to: (.+\.wav)", command_output)
     if not match:
         raise EC2GenerationError(
             "Could not find generated WAV path in EC2 output.",
