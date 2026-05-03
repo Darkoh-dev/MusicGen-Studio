@@ -154,3 +154,21 @@ The UI allows you to:
 - set the generation duration
 - submit the job to EC2
 - download the generated WAV file back to the local machine
+
+## Melody-Guided Generation Direction
+
+The next planned generation mode is melody-guided generation using a reference audio file.
+
+The intended first workflow is:
+
+- place a reference audio file in `input_audio/`
+- choose the `melody` model preset
+- use the reference audio as guidance for generation
+- keep output as WAV
+- continue running generation on the EC2 Linux + NVIDIA backend
+
+The first supported version of this feature should stay simple:
+- one input reference file at a time
+- one text prompt plus one reference file
+- no multi-file mixing
+- no advanced editing controls yet
