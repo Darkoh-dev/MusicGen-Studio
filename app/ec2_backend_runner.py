@@ -23,8 +23,24 @@ class EC2GenerationError(Exception):
         self.stdout = stdout
         self.stderr = stderr
 
+def validate_ec2_connection_config() -> None:
+    missing_values = []
+
+    if not EC2_HOST:
+        missing_values.append("MUSICGEN_EC2_HOST")
+
+    if not EC2_KEY_PATH:
+        missing_values.append("MUSICGEN_EC2_KEY_PATH")
+
+    if missing_values:
+        raise EC2GenerationError(
+            "Missing EC2 connection config. Set these entroment variables: "
+            + ", ".join(missing_values)
+        )
 
 def build_ssh_command(remote_command: str) -> list[str]:
+    validate_ec2_connection_config()
+
     return [
         "ssh",
         "-i",
@@ -35,6 +51,8 @@ def build_ssh_command(remote_command: str) -> list[str]:
 
 
 def build_scp_command(remote_file_path: str, local_directory: Path) -> list[str]:
+    validate_ec2_connection_config()
+
     return [
         "scp",
         "-i",
@@ -111,6 +129,8 @@ def upload_input_audio_file(local_audio_path: str) -> str:
         raise EC2GenerationError(f"Input audio path is not a file: {local_path}")
     
     ensure_remote_input_audio_dir()
+
+    validate_ec2_connection_config()
 
     scp_command = [
         "scp",
