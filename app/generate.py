@@ -1,10 +1,12 @@
 import argparse
 from datetime import datetime
+from math import gcd
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-import torchaudio
+import soundfile as sf
 from scipy.io.wavfile import write as write_wav_file
+from scipy.signal import resample_poly
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
 from app.config import (
@@ -72,20 +74,20 @@ def validate_input_audio_path(input_audio: Optional[str]) -> Optional[Path]:
 
 
 def load_audio_guidance(input_audio_path: Path) -> Tuple[object, int]:
-    waveform, sample_rate = torchaudio.load(str(input_audio_path))
+    audio_array, sample_rate = sf.read(str(input_audio_path), dtype="float32")
 
-    if waveform.shape[0] > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
+    if audio_array.ndim > 1:
+        audio_array = audio_array.mean(axis=1)
 
     if sample_rate != DEFAULT_SAMPLE_RATE:
-        waveform = torchaudio.functional.resample(
-            waveform,
-            orig_freq=sample_rate,
-            new_freq=DEFAULT_SAMPLE_RATE,
-        )
+        common_divisor = gcd(sample_rate, DEFAULT_SAMPLE_RATE)
+        audio_array = resample_poly(
+            audio_array,
+            DEFAULT_SAMPLE_RATE // common_divisor,
+            sample_rate // common_divisor,
+        ).astype("float32")
         sample_rate = DEFAULT_SAMPLE_RATE
 
-    audio_array = waveform.squeeze(0).numpy().astype("float32")
     return audio_array, sample_rate
 
 
