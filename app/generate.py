@@ -1,7 +1,9 @@
 import argparse
 from datetime import datetime
-from typing import Dict, Tuple
+from pathlib import Path
+from typing import Dict, Optional, Tuple
 
+import torchaudio
 from scipy.io.wavfile import write as write_wav_file
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
@@ -55,6 +57,38 @@ def build_generation_kwargs(duration_seconds: int) -> Dict[str, int]:
     }
 
 
+def validate_input_audio_path(input_audio: Optional[str]) -> Optional[Path]:
+    if not input_audio:
+        return None
+    
+    audio_path = Path(input_audio).expanduser()
+    if not audio_path.exists():
+        raise FileNotFoundError(f"Input audio file not found: {audio_path}")
+    
+    if not audio_path.is_file():
+        raise ValueError(f"Input audio is not a file: {audio_path}")
+    
+    return audio_path
+
+
+def load_audio_guidance(input_audio_path: Path) -> Tuple[object, int]:
+    waveform, sample_rate = torchaudio.load(str(input_audio_path))
+
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+
+    if sample_rate != DEFAULT_SAMPLE_RATE:
+        waveform = torchaudio.functional.resample(
+            waveform,
+            orig_freq=sample_rate,
+            new_freq=DEFAULT_SAMPLE_RATE,
+        )
+        sample_rate = DEFAULT_SAMPLE_RATE
+
+    audio_array = waveform.squeeze(0).numpy().astype("float32")
+    return audio_array, sample_rate
+
+
 def load_model_and_processor(model_name: str):
     processor = AutoProcessor.from_pretrained(
         model_name,
@@ -68,17 +102,35 @@ def load_model_and_processor(model_name: str):
     return processor, model
 
 
-def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tuple[object, str, str, str]:
+def generate_from_text(
+        prompt: str,
+        duration_seconds: int,
+        model_key: str,
+        input_audio: Optional[str] = None,
+) -> Tuple[object, str, str, str, Optional[str]]:
     validated_duration = validate_duration(duration_seconds)
     validated_model_key = validate_model_key(model_key)
+    input_audio_path = validate_input_audio_path(input_audio)
     model_name = MODEL_PRESETS[validated_model_key]
 
     processor, model = load_model_and_processor(model_name)
-    inputs = processor(
-        text=[prompt],
-        padding=True,
-        return_tensors="pt",
-    )
+
+    if input_audio_path:
+        audio_array, sample_rate = load_audio_guidance(input_audio_path)
+        inputs = processor(
+            text=[prompt],
+            audio=audio_array,
+            sampling_rate=sample_rate,
+            padding=True,
+            return_tensors="pt",
+        )
+    else:
+        inputs = processor(
+            text=[prompt],
+            padding=True,
+            return_tensors="pt",
+        )
+
     inputs = {key: value.to(DEFAULT_DEVICE) for key, value in inputs.items()}
     generation_kwargs = build_generation_kwargs(validated_duration)
     audio_values = model.generate(
@@ -86,7 +138,8 @@ def generate_from_text(prompt: str, duration_seconds: int, model_key: str) -> Tu
         **generation_kwargs,
     )
     output_path = build_output_path()
-    return audio_values, output_path, model_name, validated_model_key
+    input_audio_display = str(input_audio_path) if input_audio_path else None
+    return audio_values, output_path, model_name, validated_model_key, input_audio_display
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,23 +163,31 @@ def parse_args() -> argparse.Namespace:
         choices=SUPPORTED_MODEL_KEYS,
         help="Model preset to use.",
     )
+    parser.add_argument(
+        "--input-audio",
+        type=str,
+        default=None,
+        help="Optional reference audio file for melody-guided generation.",
+    )
     return parser.parse_args()
 
 
 def print_generation_summary(
-    model_name: str,
-    prompt: str,
-    duration_seconds: int,
-    output_path: str,
-    audio_values,
-) -> None:
-    print(f"Target model: {model_name}")
-    print(f"Target device: {DEFAULT_DEVICE}")
-    print(f"Prompt: {prompt}")
-    print(f"Duration: {duration_seconds} seconds")
-    print(f"Planned output path: {output_path}")
-    print(f"Target sample rate: {DEFAULT_SAMPLE_RATE}")
-    print(f"Generated tensor shape: {tuple(audio_values.shape)}")
+        model_name: str,
+        prompt: str,
+        duration_seconds: int,
+        output_path: str,
+        audio_values,
+        input_audio: Optional[str] = None,
+    ) -> None:
+        print(f"Target model: {model_name}")
+        print(f"Target device: {DEFAULT_DEVICE}")
+        print(f"Prompt: {prompt}")
+        print(f"Duration: {duration_seconds} seconds")
+        print(f"Input audio: {input_audio or 'None'}")
+        print(f"Planned output path: {output_path}")
+        print(f"Target sample rate: {DEFAULT_SAMPLE_RATE}")
+        print(f"Generated tensor shape: {tuple(audio_values.shape)}")
 
 
 def extract_audio_array(audio_values):
@@ -143,12 +204,13 @@ def save_audio_to_wav(audio_values, output_path: str) -> None:
 def main() -> None:
     ensure_required_directories()
     args = parse_args()
-    audio_values, output_path, model_name, model_preset = generate_from_text(
+    audio_values, output_path, model_name, model_preset, input_audio = generate_from_text(
         args.prompt,
         args.duration,
         args.model,
+        args.input_audio,
     )
-    print_generation_summary(model_name, args.prompt, args.duration, output_path, audio_values)
+    print_generation_summary(model_name, args.prompt, args.duration, output_path, audio_values, input_audio)
     save_audio_to_wav(audio_values, output_path)
 
     log_generation(
@@ -157,7 +219,7 @@ def main() -> None:
         prompt=args.prompt,
         duration_seconds=args.duration,
         output_file=output_path,
-        notes="Generated from CLI workflow.",
+        notes=f"Generated from CLI workflow. Input audio: {input_audio or 'None'}",
     )
 
     print(f"WAV file saved to: {output_path}")
