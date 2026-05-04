@@ -7,7 +7,7 @@ from typing import Dict, Optional, Tuple
 import soundfile as sf
 from scipy.io.wavfile import write as write_wav_file
 from scipy.signal import resample_poly
-from transformers import AutoProcessor, MusicgenForConditionalGeneration
+from transformers import AutoProcessor, MusicgenForConditionalGeneration, MusicgenMelodyForConditionalGeneration
 
 from app.config import (
     DEFAULT_DEVICE,
@@ -91,12 +91,19 @@ def load_audio_guidance(input_audio_path: Path) -> Tuple[object, int]:
     return audio_array, sample_rate
 
 
-def load_model_and_processor(model_name: str):
+def load_model_and_processor(model_name: str, model_key: str):
     processor = AutoProcessor.from_pretrained(
         model_name,
         cache_dir=HF_CACHE_DIR,
     )
-    model = MusicgenForConditionalGeneration.from_pretrained(
+    
+    model_class = (
+        MusicgenMelodyForConditionalGeneration
+        if model_key == "melody"
+        else MusicgenForConditionalGeneration
+    )
+
+    model = model_class.from_pretrained(
         model_name,
         cache_dir=HF_CACHE_DIR,
     )
@@ -115,7 +122,7 @@ def generate_from_text(
     input_audio_path = validate_input_audio_path(input_audio)
     model_name = MODEL_PRESETS[validated_model_key]
 
-    processor, model = load_model_and_processor(model_name)
+    processor, model = load_model_and_processor(model_name, validated_model_key)
 
     if input_audio_path:
         audio_array, sample_rate = load_audio_guidance(input_audio_path)
